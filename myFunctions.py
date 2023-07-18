@@ -53,6 +53,7 @@ def myDescribe(dataframe) :
     
     
     import ipywidgets as widgets # import library
+    import pandas as pd
     
     # def main function
     def myDescribeForOnlyOneDf(df) :
@@ -101,8 +102,12 @@ def myDescribe(dataframe) :
                 exclude=None
             if columnName :
                 df=df[[columnName]]
-        
-            display(df.describe(include=include, exclude=exclude))
+            describeTable=df.describe(include=include, exclude=exclude)
+            # add dtypes
+            describeTable.loc["dtype"]=describeTable.apply(lambda s : df[s.name].dtype).values.tolist()
+            describeTable=pd.concat([describeTable.iloc[-1:],describeTable.iloc[:-1]])
+            
+            display(describeTable)
         
         # output
         out = widgets.interactive_output(describeFunct, {"df" : widgets.fixed(df),
