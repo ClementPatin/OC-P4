@@ -1810,7 +1810,7 @@ def testDtypes (testCol,testDf) :
     print("dtype : ",test.dtype)
     print("NaN rate : ",test.isna().mean())
     
-    if test.dtype=="int64" or test.dtype=="float64" :
+    if test.dtype != "object" and test.dtype != "category" : 
         if test.min()<0 and test.max()>0 :
             print("<0 and >0")
         elif test.max()<0 :
@@ -1850,7 +1850,7 @@ def bestDtype (testCol,testDf) :
     typeScores={}
     typeScores[test.dtype]=sys.getsizeof(test)
     
-    if test.dtype=="int64" or test.dtype=="float64" :  
+    if test.dtype != "object" and test.dtype != "category" :  
         l={typ : pd.to_numeric(test,downcast=typ) for typ in ['float','integer','signed','unsigned']}            
                 
         if test.dtype=="int64" :
