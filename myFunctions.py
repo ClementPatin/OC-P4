@@ -39,6 +39,15 @@ def getCombiOfCol(listOfCols) :
     return dictOfCombis
 
 
+def myBoxPlot(df,numColName,direction="h",ax=None) :
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    sns.boxplot(data=df,
+                x=numColName if direction=="h" else None,
+                y=numColName if direction=="v" else None
+                ,ax=ax)
+
 
 def myDescribe(dataframe) :
     
@@ -54,6 +63,7 @@ def myDescribe(dataframe) :
     
     import ipywidgets as widgets # import library
     import pandas as pd
+    import matplotlib.pyplot as plt
     
     # def main function
     def myDescribeForOnlyOneDf(df) :
@@ -65,7 +75,7 @@ def myDescribe(dataframe) :
         
         # widget with .describe() display options
         widDescribe=widgets.RadioButtons(options=["quantitative","qualitative","all"], 
-                                         value="quantitative",
+                                         value="all",
                                          description="Which features :",
                                          disabled=False,
                                         style={'description_width': 'initial'}
@@ -105,9 +115,23 @@ def myDescribe(dataframe) :
             describeTable=df.describe(include=include, exclude=exclude)
             # add dtypes
             describeTable.loc["dtype"]=describeTable.apply(lambda s : df[s.name].dtype).values.tolist()
+            describeTable.loc["%NaN"]=describeTable.apply(lambda s : (round(df[s.name].isna().mean()*100,1)).astype(str)+"%").values.tolist()
             describeTable=pd.concat([describeTable.iloc[-1:],describeTable.iloc[:-1]])
             
-            display(describeTable)
+            # descide which kind of display
+            if columnName and df[columnName].dtype.kind not in 'O':
+                fig, (ax1,ax2) = plt.subplots(1,2,width_ratios=[1,4],figsize=(12,4))
+                ax1.table(cellText=describeTable.values,
+                         rowLabels=describeTable.index,
+                         bbox=[0,0,1,1],
+                         colLabels=describeTable.columns)
+                ax1.axis(False)
+
+                myBoxPlot(df=df,numColName=columnName,direction="h",ax=ax2)
+                plt.show()
+                
+            else :
+                display(describeTable)
         
         # output
         out = widgets.interactive_output(describeFunct, {"df" : widgets.fixed(df),
@@ -135,7 +159,6 @@ def myDescribe(dataframe) :
                                                                    }
                                         )
         display(widDfList,out)
-
 
 def generateDfsToTestImput (df) :
     '''       
@@ -837,13 +860,16 @@ def featureDistrib(df,featureName,dictPalette=None,ax=None) :
     
 
     '''
+    import seaborn as sns
+    import pandas as pd
+    import matplotlib.pyplot as plt
     
     # common parameters
     sns.set_theme()
     myColor=dictPalette[featureName] if dictPalette else None # set the color of graph with dictPalette
     myStat="density" # graph will display percentages
     
-    if df[featureName].dtype in ["float64","int64"] : # for numerical features
+    if (df[featureName].dtype in ["float64","float32","float16","float8","int64","int32","int16","int8"]) and df[featureName].nunique()!=2 : # for numerical features
         sns.histplot(data=df,
                      x=featureName,
                      color=myColor,
@@ -1427,7 +1453,7 @@ def myPCA (df, q, ACPfeatures=None) :
     
     
     # stores values and index 
-    Xfeatures = ACPfeatures if ACPfeatures else df.select_dtypes("float64").columns.tolist()
+    Xfeatures = ACPfeatures if ACPfeatures else [col for col in df.columns.tolist() if df[col].dtype.kind in 'biufc']
     PCAdf=df.copy()[Xfeatures]
     X = PCAdf.values
     Xidx=PCAdf.index
@@ -1451,6 +1477,8 @@ def PCA_scree_plot (pca) :
     
     parameter : fitted sklearn.decomposition.PCA
     '''
+    import pandas as pd
+    import numpy as np
     # initiate dataframe
     screeDf=pd.DataFrame(index=["F"+str(k+1) for k in range(pca.n_components)])
     # explained variance ratio in percentage
@@ -1459,6 +1487,7 @@ def PCA_scree_plot (pca) :
     screeDf["Variance expliquée cumulée"] = screeDf["Variance expliquée"].cumsum().round(2)
     
     # plot
+    import seaborn as sns
     sns.set_theme()
 
     import plotly.express as px
@@ -1483,6 +1512,7 @@ def PCA_scree_plot (pca) :
     fig.show()
 
 
+
 def pcaCorrelationMatrix (pca,
                           PcafeaturesNames,
                           additionnalVariable=None
@@ -1500,7 +1530,8 @@ def pcaCorrelationMatrix (pca,
         - element 0 : X_scaled, used for PCA
         - element 1 : addVarSeries, the additionnal variable pandas.Series object
     '''
-    
+    import pandas as pd
+    import numpy as np
     matrix=pca.components_.T*np.sqrt(pca.explained_variance_)
     dfMatrix=pd.DataFrame(
         matrix,
@@ -1520,6 +1551,7 @@ def pcaCorrelationMatrix (pca,
         
         dfMatrix.loc["Add Var ("+addVarSeries.name+")"]=corrAddVar
     return dfMatrix
+
 
 
 def heatPcaCorrelationMatrix (pca,
@@ -1542,6 +1574,8 @@ def heatPcaCorrelationMatrix (pca,
         - element 1 : addVarSeries, the additionnal variable pandas.Series object
     figsize : list or tuple, size of the figure. Default = (10,5)
     '''
+    import seaborn as sns
+    import matplotlib.pyplot as plt
     
     # use pcaCorrelationMatrix function to create the matrix
     dfMatrix=pcaCorrelationMatrix (pca=pca,
@@ -1593,8 +1627,10 @@ def heatPcaCorrelationMatrixWid (df,
     --------------------
     figsize : list or tuple, size of the figure. Default = (10,5)
     '''
+
+    import ipywidgets as widgets
     # create a widget for choosing additionnal variable
-    addVarColList=[col for col in df.select_dtypes("float64").columns if col not in PcafeaturesNames]
+    addVarColList=[col for col in df.columns if (col not in PcafeaturesNames)and(df[col].dtype.kind in 'biufc')]
 
     import ipywidgets as widgets
     widAddVar=widgets.Dropdown(options={col : (X_scaled,df[col]) for col in addVarColList}|{None : None},
@@ -1625,6 +1661,11 @@ def correlation_graph_enhanced(pca,
                                additionnalVariable=None
                               ) : 
     """display correlation graph for a given pca
+
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import numpy as np
 
     Parameters : 
     ----------
@@ -1736,6 +1777,7 @@ def correlation_graph_enhanced_WID(df,
                                   ) : 
     """display correlation graph for a given pca, with the choice of normalization
 
+
     Parameters : 
     ----------
     pca : sklearn.decomposition.PCA : PCA object, already fitted
@@ -1839,32 +1881,1372 @@ def testDtypes (testCol,testDf) :
 
 
 
-def bestDtype (testCol,testDf) :
+def bestDtype (series) :
+    '''
+    returns the most memory efficient dtype for a given Series
+    
+    parameters :
+    ------------
+    series : series from a dataframe
+    
+    returns :
+    ---------
+    bestDtype : dtype
+    '''
 
     import sys
     import pandas as pd
-    df=testDf.copy()
-    test=df[testCol]
+    import gc
+    s=series.copy()
 
-    
-    typeScores={}
-    typeScores[test.dtype]=sys.getsizeof(test)
-    
-    if test.dtype != "object" and test.dtype != "category" :  
-        l={typ : pd.to_numeric(test,downcast=typ) for typ in ['float','integer','signed','unsigned']}            
-                
-        if test.dtype=="int64" :
-            typeScores[l["integer"].dtype]=sys.getsizeof(l["integer"])
-        
-        typeScores[l['signed'].dtype]=sys.getsizeof(l['signed'])
-         
-        typeScores[l['unsigned'].dtype]=sys.getsizeof(l['unsigned'])
+    bestDtype = s.dtype
+    bestMemory = sys.getsizeof(s)
 
-        typeScores[l["float"].dtype]=sys.getsizeof(l["float"])
-    
-    
+    if s.dtype.kind == "O" :
+        bestDtype = 'category'
     else :
-        typeScores["category"]=sys.getsizeof(test.astype("category"))
-        
-    return(min(typeScores,key=typeScores.get))
+        for typ in ['unsigned','signed','float'] :
+            sDC = pd.to_numeric(s,downcast=typ)
+            mem = sys.getsizeof(sDC)
+            if mem < bestMemory :
+                bestMemory = mem
+                bestDtype = sDC.dtype
+            del sDC
+            gc.collect()
+    
+    del s
+    gc.collect()
+    return bestDtype
 
+
+def plotCatFeatureVsTarget(df, 
+                           catFeatureName, 
+                           targetFeatureName, 
+                           targetValues=None, 
+                           includeCatFeatureNan=True, 
+                           includeTargetNan=False,
+                          ) : 
+    '''
+    plot the distribution of a categorical feature AND the percentage of target values per category on another graph.
+    
+    parameters :
+    ------------
+    df - DataFrame 
+    catFeatureName - string : name of the categorical feature 
+    targetFeatureName - string : name of the target
+    targetValues - list or str/int/float or None : target value(s) to consider in the "percentage" graph. 
+                            By default : None  (use of all Target unique values)
+    includeCatFeatureNan - bool : Whether or not to include the categorical feature missing values as a category. 
+                            By default : True
+    includeTargetNan : bool : Whether or not to include the Target missing values as a category. 
+                            By default : False,
+    
+    '''
+    
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as mtick
+    import seaborn as sns
+    
+    # create a copy 
+    tempDf = df[[catFeatureName,targetFeatureName]].copy()
+    
+    # initiate a dataframe to store counts and percentages
+    catFeatureDf = pd.DataFrame(tempDf[catFeatureName].value_counts(dropna=not includeCatFeatureNan))
+    
+    # add a line with infos of the whole dataframe
+    catFeatureDf.loc["WHOLE_DATA","count"]=tempDf.shape[0]
+    catFeatureDf=catFeatureDf.loc[[catFeatureDf.index[-1]]+list(catFeatureDf.index)[:-1]]
+    
+
+    # handle targetValues
+    if targetValues :
+        if type(targetValues)!=list :
+            targetValues = [targetValues]
+    else :
+        targetValues = list(tempDf[targetFeatureName].dropna().unique())
+        if tempDf[targetFeatureName].dtype.kind in "biufc" :
+            targetValues.sort()
+            
+        if includeTargetNan==True and tempDf[targetFeatureName].isna().sum()>0 :
+            if tempDf[targetFeatureName].dtype.kind=='O' :
+                tempDf[targetFeatureName]=tempDf[targetFeatureName].astype("O").fillna("targetMissing").astype('category')
+            else :
+                tempDf[targetFeatureName]=tempDf[targetFeatureName].fillna("targetMissing")
+            targetValues = targetValues+["targetMissing"]
+
+    
+    if tempDf[targetFeatureName].dtype.kind in "biufc" :
+        targetValues.sort() 
+    
+    # add percentages for each Target unique values
+    for val in targetValues :
+        catFeatureDf[val] = tempDf.loc[tempDf[targetFeatureName] == val,catFeatureName].value_counts(dropna= not includeCatFeatureNan) \
+        / catFeatureDf["count"]
+            
+        catFeatureDf.loc["WHOLE_DATA",val]=tempDf[tempDf[targetFeatureName] == val].shape[0]/df.shape[0]
+
+            
+    catFeatureDf=catFeatureDf.reset_index()
+    catFeatureDf[catFeatureName]=catFeatureDf[catFeatureName].fillna("'NaN'") # replace np.nan category with a string 'NaN'
+    catFeatureDf[catFeatureName]=catFeatureDf[catFeatureName].astype(str)
+    catFeatureDf=catFeatureDf.fillna(0) # if a catfeature value was not in filtered tempDf value_counts, i.e. not present
+    # in this filtered tempDf, its percentage has been filled with np.nan. Replace with 0% 
+    
+    # use .melt() method for the "percentage" graph
+    catFeatureDfMelt=catFeatureDf.drop(columns="count").melt(id_vars=catFeatureName,
+                                                                value_vars=catFeatureDf.columns[2:],
+                                                                var_name=targetFeatureName
+                                                               )
+    
+    if len(catFeatureDf) < 10 :
+    
+        # create figure with 2 axes
+        palette=sns.color_palette("Paired",len(catFeatureDf)) # palette
+        fig, axs = plt.subplots(1,2,figsize=(12,6)) # figure and axes
+        axs = axs.ravel()
+        nanRate=str(round(tempDf[catFeatureName].isna().mean()*100,1))+"%"
+        fig.suptitle(catFeatureName+" ( "+nanRate+" NaN ) : distribution and relation with Target") # main title
+
+        # plot distribution of the categorical feature
+        sns.barplot(data=catFeatureDf.iloc[1:,:],
+                    x=catFeatureName,
+                    y="count",
+                    color="black" if len(targetValues)>1 else None, # if use of several target values, countplot in black
+                    palette=None if len(targetValues)>1 else palette, # if use of a unique() target value, use palette colors
+                    ax=axs[0])  
+
+        # set axe parameters
+        axs[0].set_ylabel("Number of observations")
+        axs[0].set_xticklabels(axs[0].get_xticklabels(),rotation=90 if len(catFeatureDf)>3 else 0,ha="center",va="center_baseline")
+        axs[0].set_xlabel("")
+
+        # plot percentage of Target values for each category of cat feature
+        sns.barplot(data=catFeatureDfMelt,
+                    x=catFeatureName,
+                    y="value",
+                    hue=targetFeatureName if len(targetValues)>1 else None, # if use of several target values, stacked plot
+                    ax=axs[1],
+                    order=None,
+                    palette=sns.color_palette("Greys",len(targetValues)+2)[2:] if len(targetValues)>1 \
+                    # if several target values : grey palette
+                            else ["black"]+palette # if unique target value : use palette and "black" for "WHOLE_DATA"
+                   )
+
+        # set axe parameters
+        axs[1].set_ylabel("Percent of "+targetFeatureName+" values" if len(targetValues)>1 \
+                          else "Percent of "+targetFeatureName+" = "+str(targetValues[0]))
+        axs[1].set_xticklabels(axs[1].get_xticklabels(),rotation=90 if len(catFeatureDf)>3 else 0,ha="center",va="center_baseline")
+        axs[1].set_xlabel("")
+        axs[1].set_yticks(list(axs[1].get_yticks())+list(catFeatureDf.iloc[0,2:]))
+        axs[1].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+
+        # plot horizontal line(s) for each target value. To compare "WHOLE_DATA" percentage to each category percentage
+        for i,val in enumerate(targetValues) :
+            axs[1].axhline(y=catFeatureDf.iloc[0,2+i],color=sns.color_palette("Greys",len(targetValues)+2)[2:][i] if len(targetValues)>1 else "black")
+
+            
+    else :
+        # create figure with 2 axes
+        palette=sns.color_palette("Paired",len(catFeatureDf)) # palette
+        fig, axs = plt.subplots(1,2,figsize=(12,12)) # figure and axes
+        axs = axs.ravel()
+        nanRate=str(round(tempDf[catFeatureName].isna().mean()*100,1))+"%"
+        fig.suptitle(catFeatureName+" ( "+nanRate+" NaN ) : distribution and relation with Target") # main title
+    
+        # plot distribution of the categorical feature
+        sns.barplot(data=catFeatureDf.iloc[1:,:],
+                    y=catFeatureName,
+                    x="count",
+                    color="black" if len(targetValues)>1 else None, # if use of several target values, countplot in black
+                    palette=None if len(targetValues)>1 else palette, # if use of a unique() target value, use palette colors
+                    ax=axs[0])  
+
+        # set axe parameters
+        axs[0].set_xlabel("Number of observations")
+        axs[0].set_ylabel("")
+        axs[0].tick_params( # change tick labels locations
+            top=True,
+            labeltop=True, # put them on top
+            labelbottom=True,
+            bottom=True
+        )
+
+        # plot percentage of Target values for each category of cat feature
+        sns.barplot(data=catFeatureDfMelt.loc[catFeatureDfMelt[catFeatureName]!="WHOLE_DATA"],
+                    y=catFeatureName,
+                    x="value",
+                    hue=targetFeatureName if len(targetValues)>1 else None, # if use of several target values, stacked plot
+                    ax=axs[1],
+                    order=None,
+                    palette=sns.color_palette("Greys",len(targetValues)+2)[2:] if len(targetValues)>1 \
+                    # if several target values : grey palette
+                            else palette # if unique target value : use palette and "black" for "WHOLE_DATA"
+                   )
+
+        # set axe parameters
+        axs[1].set_xlabel("Percent of "+targetFeatureName+" values" if len(targetValues)>1 \
+                          else "Percent of "+targetFeatureName+" = "+str(targetValues[0]))
+        axs[1].set_ylabel("")
+        axs[1].set_yticklabels("")
+        axs[1].set_xticks(list(axs[1].get_xticks())+list(catFeatureDf.iloc[0,2:]))
+        axs[1].xaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        axs[1].tick_params( # change tick labels locations
+            top=True,
+            labeltop=True, # put them on top
+            labelbottom=True,
+            bottom=True
+        )
+
+        # plot horizontal line(s) for each target value. To compare "WHOLE_DATA" percentage to each category percentage
+        for i,val in enumerate(targetValues) :
+            axs[1].axvline(x=catFeatureDf.iloc[0,2+i],color=sns.color_palette("Greys",len(targetValues)+2)[2:][i] if len(targetValues)>1 else "black")
+
+            
+        
+    del tempDf, catFeatureDf, palette, targetValues, catFeatureDfMelt, nanRate
+
+
+
+
+def plotNumFeatureVsTarget(df, 
+                           numFeatureName, 
+                           targetFeatureName, 
+                           targetValues=None, 
+                           includeTargetNan=False,
+                           sampleSize=None
+                          ) : 
+    '''
+    plot the distribution of a numerical feature for the whole data AND for filtered data on values of the target.
+    
+    parameters :
+    ------------
+    df - DataFrame 
+    numFeatureName - string : name of the numerical feature 
+    targetFeatureName - string : name of the target
+    targetValues - list or str/int/float or None : target value(s) to consider in the "percentage" graph. 
+                            By default : None  (use of all Target unique values)
+    includeTargetNan : bool : Whether or not to include the Target missing values as a category. 
+                            By default : False,
+    sampleSize - int or None : size of the df sample ( for faster plotting)
+                            By default : None  (no sampling)
+    
+    '''
+    
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
+    # create a copy 
+    if sampleSize :
+        tempDf = df[[numFeatureName,targetFeatureName]].copy().sample(sampleSize)
+    else :
+        tempDf = df[[numFeatureName,targetFeatureName]].copy()
+    
+    # handle targetValues
+    if targetValues :
+        if type(targetValues)!=list :
+            targetValues = [targetValues]
+    else :
+        targetValues = list(tempDf[targetFeatureName].dropna().unique())
+        if tempDf[targetFeatureName].dtype.kind in "biufc" :
+            targetValues.sort()
+            
+        if includeTargetNan==True :
+            if tempDf[targetFeatureName].dtype.kind=='O' :
+                tempDf[targetFeatureName]=tempDf[targetFeatureName].astype("O").fillna("targetMissing").astype('category')
+            else :
+                tempDf[targetFeatureName]=tempDf[targetFeatureName].fillna("targetMissing")
+            targetValues = targetValues+["targetMissing"]
+
+    
+    
+    # filtered df on target values 
+    filteredDf = []
+    for val in targetValues :
+        if type(val)==float and np.isnan(val) : # handle NaN
+            filteredDf.append(tempDf.loc[tempDf[targetFeatureName].isna()])
+        else :
+            filteredDf.append(tempDf.loc[tempDf[targetFeatureName]==val])
+    
+    # plot
+    
+    # create figure with 2 axes
+    palette=sns.color_palette("Paired") # palette
+    fig, axs = plt.subplots(1,2,figsize=(12,6)) # figure and axes
+    axs = axs.ravel()
+    nanRate=str(round(tempDf[numFeatureName].isna().mean()*100,1))+"%"
+    fig.suptitle(numFeatureName+" ( "+nanRate+" NaN ) : distribution and relation with Target") # main title
+    
+    sns.histplot(data=tempDf, x=numFeatureName,stat='density', bins=100, kde = True, ax=axs[0],ec=None)
+    
+    for val,df in zip(targetValues,filteredDf) :
+        sns.kdeplot(data=df, x=numFeatureName,ax=axs[1],label = targetFeatureName+" = "+str(val),legend=True, cut=0,fill=True)
+    
+    axs[1].legend()
+    
+
+        
+    del tempDf, filteredDf, palette, targetValues,nanRate
+
+
+
+def plotFeatureVsTargetWID (df,
+                               targetFeatureName,
+                               targetValsForCat=None,
+                                targetValsForNum=None,
+                               includeCatFeatureNan=True, 
+                               includeTargetNan=False,) :
+    import ipywidgets as widgets
+    import pandas as pd
+    import numpy as np
+    
+    # widget - categorical variable selection
+    colList=[col for col in df.columns if col != targetFeatureName]
+    
+
+    widCol=widgets.Dropdown(options=colList,
+                              value=colList[0],
+                              description="Which column :",
+                              disabled=False,
+                              style={'description_width': 'initial'}
+                              )
+    
+    widCatOrNumThreshold = widgets.IntSlider(value=50,min=10,max=100,step=10,
+                                             description="Nb of unique values below which a num' feature is considered cat' :",
+                                            style={'description_width': 'initial'},
+                                             disabled=False,
+                                             layout=widgets.Layout(width="75%")
+                                            )
+    
+    def whichPlot(col,threshold) :
+        if (df[col].dtype.kind in "O") or (len(df[col].unique())<=threshold) :
+            
+            plotCatFeatureVsTarget(df=df, 
+                           catFeatureName=col, 
+                           targetFeatureName=targetFeatureName, 
+                           targetValues=targetValsForCat, 
+                           includeCatFeatureNan=includeCatFeatureNan, 
+                           includeTargetNan=includeTargetNan,
+                          ) 
+        else :
+            widSampleSize = widgets.BoundedIntText(value=10000,
+                                                   min = 0,
+                                                   max = len(df),
+                                                   step = 1,
+                                                   description='Sample size : ',
+                                                   disabled=False
+            )
+            
+            outSub = widgets.interactive_output(plotNumFeatureVsTarget, {"df" : widgets.fixed(df), 
+                                                               "numFeatureName" : widgets.fixed(col), 
+                                                               "targetFeatureName" : widgets.fixed(targetFeatureName), 
+                                                               "targetValues" : widgets.fixed(targetValsForNum), 
+                                                               "includeTargetNan" : widgets.fixed(includeTargetNan),
+                                                               "sampleSize" : widSampleSize
+                                                                        })
+            display(widSampleSize,outSub)
+
+    
+    out = widgets.interactive_output(whichPlot, {"col" : widCol,
+                                                 "threshold" : widCatOrNumThreshold
+                                                })
+    display(widCol,widCatOrNumThreshold,out)
+
+
+
+
+
+
+
+
+def extractTNFPFNTP (thresholds, y_pred_proba, y_true) :
+    
+    '''
+    extract lists of TN, FP, FN, TP values for a given list of thresholds
+    parameters :
+    ------------
+    thresholds - list : thresholds
+    y_pred_proba - list : prediction scores
+    y_true - list : true values
+    
+    return :
+    --------
+    TN,FP,FN,TP - tuple : 4 list of TN, FP, FN, TP. In each of them, one element for one threshold
+    '''
+    from sklearn.metrics import confusion_matrix
+    
+    TN = [confusion_matrix(y_true=y_true,y_pred=y_pred_proba>=th).ravel()[0] for th in thresholds]
+    FP = [confusion_matrix(y_true=y_true,y_pred=y_pred_proba>=th).ravel()[1] for th in thresholds]
+    FN = [confusion_matrix(y_true=y_true,y_pred=y_pred_proba>=th).ravel()[2] for th in thresholds]
+    TP = [confusion_matrix(y_true=y_true,y_pred=y_pred_proba>=th).ravel()[3] for th in thresholds]
+    
+    return TN,FP,FN,TP
+
+
+
+
+
+
+def meanCostPerPrediction (confusionMatrix,costMatrix) :
+    
+    '''
+    average cost per prediction, given aconfusionMatrix, and a cost matrix
+    
+    parameters :
+    ------------
+    confusionMatrix - array : scikit learn style BINARY confusion matrix :
+                                TN  FP
+                                FN  TP  
+    costMatrix - array : BINARY classification cost matrix :
+                            CTN  CFP
+                            CFN  CTP
+    
+    returns :
+    ---------
+    averageCostPerPrediction - float : average cost per predicition
+    
+    '''
+    
+    import numpy as np
+    
+    # extract TN,FP,FN,TP
+    TN,FP,FN,TP=confusionMatrix.ravel()
+    Total=TN+FP+FN+TP # compute number of predictions
+    
+    # extract  cTN,cFP,cFN,cTP
+    if type(costMatrix) != np.ndarray :
+        costMatrix=np.array(costMatrix)
+    cTN,cFP,cFN,cTP=costMatrix.ravel()
+    
+    # compute rates
+    TNR=TN/(TN+FP)
+    FPR=FP/(TN+FP)
+    FNR=FN/(TP+FN)
+    TPR=TP/(TP+FN)
+    
+    # compute percentage of positives and negatives
+    actualPositiveRatio = (TP+FN)/Total
+    actualNegativeRatio = (TN+FP)/Total
+    
+    # compute average cost per prediction
+    averageCostPerPrediction= cTN * TNR * actualNegativeRatio \
+                            + cFP * FPR * actualNegativeRatio \
+                            + cFN * FNR * actualPositiveRatio \
+                            + cTP * TPR * actualPositiveRatio
+    
+    return averageCostPerPrediction
+
+
+
+
+
+
+def classificationCostsDf(y_true,y_proba,costMatrix,drop_intermediate=False) :
+    
+    '''
+    return the different average costs per prediciton, for given thresholds extracted from the scikit learn roc_curve function
+    
+    parameters :
+    ------------
+    y_pred_proba - list : prediction scores
+    y_true - list : true values 
+    costMatrix - array : BINARY classification cost matrix :
+                            CTN  CFP
+                            CFN  CTP
+    
+    drop_intermediate - bool : roc_curve function parameter. BY DEFAULT : False
+    
+    return :
+    --------
+    df - dataframe : one column with diffrents thresholds extracted from roc_curve, one column with costs
+    
+    '''
+    
+    import pandas as pd
+    from sklearn.metrics import roc_curve
+    from sklearn.metrics import confusion_matrix
+    import gc
+    
+    # extract thresholds
+    FPR,RECALL,TH = roc_curve(y_score=y_proba,y_true=y_true,drop_intermediate=drop_intermediate)
+    if TH[0]==float("inf") : # handle float infinity
+        newMaxTh = round(TH[1],1) if round(TH[1],1)>TH[1] else round(TH[1],1)+0.1
+        TH = [newMaxTh]+list(TH)[1:] 
+    
+    # compute costs using meanCostPerPrediction() function, for each threshold
+    costs = [ meanCostPerPrediction ( 
+                                        confusion_matrix(
+                                                            y_true=y_true,
+                                                            y_pred=y_proba >= threshold
+                                                        ),
+                                        costMatrix
+                                    )
+             for threshold in TH
+            ]
+    
+    # put results in the dataframe
+    df = pd.DataFrame({"Threshold":TH,"Average_prediction_cost":costs})
+    
+    del FPR,RECALL,TH,costs
+    gc.collect()
+    
+    return df
+
+
+
+
+
+
+
+
+def getCostEffectiveClassifModelUsingTEST(alreadyFittedModelsList,
+                                             namesList,
+                                             X_test,
+                                             y_test,
+                                             costMatrix,
+                                             drop_intermediate=False,
+                                             plot=True,
+                                             palette=None) :
+    
+    '''
+    for binary classification
+    from different ALREADY fitted models, give the best cost effective one for a given cost matrix, with the optimum threshold
+    
+    parameters :
+    ------------
+    alreadyFittedModelsList - list or model : list of ALREADY fitted models (or only one model)
+    namesList - list or string : list of names (or only one name)
+    X_test - array or dataframe : testing data
+    y_test - array or Series : target values for testing data
+    costMatrix - array : BINARY classification cost matrix :
+                            CTN  CFP
+                            CFN  CTP
+    drop_intermediate - bool : roc_curve function parameter. BY DEFAULT : False
+    plot - bool : whether or not plot costs/thresholds curve. BY DEFAULT : True
+    palette - list : list of colors. Default : None, use of seaborn "tab10" palette
+    
+    return :
+    --------
+    lowestMinCostModel - model : the best fitted model
+    lowestMinCostThreshold - float : the optimal threshold
+    lowestMinCost - float : the minimum average cost per prediction (for this threshold)
+    '''
+    
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    
+    # create figure and handle palette
+    if plot == True :
+        fig,axs = plt.subplots(1,1,figsize=(12,4))
+        if not palette :
+            palette = sns.color_palette("tab10")
+    
+    # handle alreadyFittedModelsList and namesList types
+    if type(alreadyFittedModelsList)!=list :
+        alreadyFittedModelsList=[alreadyFittedModelsList]
+    if type(namesList)!=list :
+        namesList=[namesList]
+    
+    # initiate a dataframe to store costs
+    minCostDf=pd.DataFrame()
+    
+    # iterate on models
+    for i,clf in enumerate(alreadyFittedModelsList) :
+        
+        # predict scores on test set
+        if hasattr(clf, "predict_proba"):
+            y_pred_proba = clf.predict_proba(X_test)[:, 1]
+        elif hasattr(clf, "decision_function"):
+            y_pred_proba = clf.decision_function(X_test)
+        else:
+            y_pred_proba = clf.predict(X_test) 
+        
+        # using predictions scores, compute the cost table 
+        costsDfClf=classificationCostsDf(y_true=y_test,
+                                         y_proba=y_pred_proba,
+                                         costMatrix=costMatrix,
+                                         drop_intermediate=drop_intermediate)
+        
+        # get minimun cost for this clf, and threshold
+        minCostThClf = costsDfClf["Threshold"][costsDfClf["Average_prediction_cost"].idxmin()]
+        minCostClf = costsDfClf["Average_prediction_cost"].min()
+        
+        # put results in minCostDf
+        minCostDf.loc[i,"model"]=namesList[i]
+        minCostDf.loc[i,"threshold"]=minCostThClf
+        minCostDf.loc[i,"cost"]=minCostClf
+        
+        # add this clf to a plot cost/threshold
+        if plot == True :
+            sns.lineplot(data=costsDfClf,x="Threshold",y="Average_prediction_cost",ax=axs,label=namesList[i],color=palette[i]);
+            sns.scatterplot(x=[minCostThClf],y=[minCostClf],color=palette[i],marker=6)
+
+    # set title and diplay
+    if plot == True :
+        axs.set_title("Average prediction cost per threshold")
+        plt.show() 
+    display(minCostDf)
+    
+    # compare each clf on select best one
+    idxmin = minCostDf["cost"].idxmin()
+    lowestMinCost = minCostDf["cost"].min()
+    lowestMinCostModel = alreadyFittedModelsList[idxmin]
+    lowestMinCostThreshold = minCostDf["threshold"][idxmin]
+    print("le modèle avec le coût le plus faible est ",minCostDf["model"][idxmin])
+    
+    return lowestMinCostModel,lowestMinCostThreshold,lowestMinCost
+
+
+        
+    
+
+
+
+
+
+
+
+def getCostEffectiveClassifModelUsingCV(notFittedModelsList,
+                                 namesList,
+                                 XTrain,
+                                 yTrain,
+                                 costMatrix,
+                                 kf=None,
+                                 drop_intermediate=False,
+                                 plot=True,
+                                 palette=None) :
+    
+    '''
+    for binary classification
+    from different models, NOT FITTED, give the best cost effective one for a given cost matrix, with the optimum threshold, 
+    using Cross Validation
+    
+    parameters :
+    ------------
+    notFittedModelsList - list or model : list of NOT fitted models (or only one model)
+    namesList - list or string : list of names (or only one name)
+    XTrain - array or dataframe : training data
+    yTrain - array or Series : target values for training data
+    costMatrix - array : BINARY classification cost matrix :
+                            CTN  CFP
+                            CFN  CTP
+    kf - cross-validator or int : for computing cross validation ypreds
+                                    cross-validator : use kf
+                                    int : use stratified kfold with n_splits=kf, shuffle=True, random_state=1
+                                    BY DEFAULT : None, use stratified kfold with n_splits=5, shuffle=True, random_state=1
+    drop_intermediate - bool : roc_curve function parameter. BY DEFAULT : False
+    plot - bool : whether or not plot costs/thresholds curve. BY DEFAULT : True
+    palette - list : list of colors. BY DEFAULT : None, use of seaborn "tab10" palette
+    
+    return :
+    --------
+    lowestMinCostModel - model : the best fitted model
+    lowestMinCostThreshold - float : the optimal threshold
+    lowestMinCost - float : the minimum average cost per prediction (for this threshold)
+    '''
+    
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    from sklearn.model_selection import StratifiedKFold
+    
+    # create figure and handle palette
+    if plot == True :
+        fig,axs = plt.subplots(1,1,figsize=(12,4))
+        if not palette :
+            palette = sns.color_palette("tab10")
+    
+    # handle notFittedModelsList and namesList types
+    if type(notFittedModelsList)!=list :
+        notFittedModelsList=[notFittedModelsList]
+    if type(namesList)!=list :
+        namesList=[namesList]
+    
+    # handle kf
+    if not kf :
+        kf=StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+    if type(kf)==int :
+        kf=StratifiedKFold(n_splits=kf, shuffle=True, random_state=1)
+    
+    # initiate a dataframe to store CV preds
+    CVpreds=pd.DataFrame(columns=namesList,index=range(len(XTrain)))
+    # initiate a dataframe to store costs
+    minCostDf=pd.DataFrame()
+    
+    # iterate on models
+    for i,clf in enumerate(notFittedModelsList) :
+        # iterate on folds
+        for n_fold, (train_idx,valid_idx) in enumerate(kf.split(XTrain,yTrain)) :
+            
+            X_trainCV, y_trainCV = XTrain[train_idx],yTrain[train_idx]
+            X_validCV, y_validCV = XTrain[valid_idx],yTrain[valid_idx]
+            
+            # fit the model on train CV set
+            clf.fit(X_trainCV,y_trainCV)
+            
+            # predict scores on valid CV set and put them in the df
+            if hasattr(clf, "predict_proba"):
+                CVpreds.loc[valid_idx,namesList[i]] = clf.predict_proba(X_validCV)[:, 1]
+            elif hasattr(clf, "decision_function"):
+                CVpreds.loc[valid_idx,namesList[i]] = clf.decision_function(X_validCV)
+            else:
+                CVpreds.loc[valid_idx,namesList[i]] = clf.predict(X_validCV) 
+
+        # using predictions scores, compute the cost table        
+        costsDfClf=classificationCostsDf(y_true=yTrain,
+                                         y_proba=CVpreds[namesList[i]],
+                                         costMatrix=costMatrix,
+                                         drop_intermediate=drop_intermediate)
+        
+        # get minimun cost for this clf, and threshold
+        minCostThClf = costsDfClf["Threshold"][costsDfClf["Average_prediction_cost"].idxmin()]
+        minCostClf = costsDfClf["Average_prediction_cost"].min()
+        
+        # put results in minCostDf
+        minCostDf.loc[i,"model"]=namesList[i]
+        minCostDf.loc[i,"threshold"]=minCostThClf
+        minCostDf.loc[i,"cost"]=minCostClf
+        
+        # add this clf to a plot cost/threshold
+        if plot == True :
+            sns.lineplot(data=costsDfClf,x="Threshold",y="Average_prediction_cost",ax=axs,label=namesList[i],color=palette[i]);
+            sns.scatterplot(x=[minCostThClf],y=[minCostClf],color=palette[i],marker=6)
+    # set title and diplay
+    if plot == True :
+        axs.set_title("Average prediction cost per threshold")
+        plt.show() 
+    display(minCostDf)
+    
+    # compare each clf on select best one
+    idxmin = minCostDf["cost"].idxmin()
+    lowestMinCost = minCostDf["cost"].min()
+    lowestMinCostModelFITTED = notFittedModelsList[idxmin].fit(XTrain,yTrain)
+    lowestMinCostThreshold = minCostDf["threshold"][idxmin]
+    print("le modèle avec le coût le plus faible est ",minCostDf["model"][idxmin])
+    
+    return lowestMinCostModelFITTED,lowestMinCostThreshold,lowestMinCost
+
+
+
+
+def plotROCandPR(alreadyFittedModelsList,namesList,Xtest,ytest,plot_chance_level=False,palette=None) :
+    '''
+    plot ROC curve and PrecisionRecall curve for given model(s), using predictions on a test cv
+    
+    parameters :
+    ------------
+    alreadyFittedModelsList - list of models, or model type : a list of ALREADY fitted models (or one ALREADY model)
+    namesList - list of string, or string : a list of names, one for each model (or one model name)
+    Xtest - array or dataframe : testing data
+    ytest - array or Series : target values for testing data
+    plot_chance_level - bool : whether or not to plot random classifier curve. BY DEFAULT : False
+    palette - list : list of colors. BY DEFAULT : None (use of seaborn "tab10")
+    
+    output :
+    --------
+    display curves
+    
+    '''
+    
+    # imports
+    from sklearn.metrics import RocCurveDisplay
+    from sklearn.metrics import PrecisionRecallDisplay
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    
+    # create figure, both axes and palette
+    fig,axs = plt.subplots(1,2,figsize=(12,6))
+    fig.suptitle("ROC and Precision-Recall curves\nfrom preds on test set")
+    axs=axs.flatten()
+    if not palette :
+        palette = sns.color_palette("tab10")
+    
+    # handle inputs if type is not list
+    if type(alreadyFittedModelsList)!=list :
+        alreadyFittedModelsList=[alreadyFittedModelsList]
+    if type(namesList)==str :
+        namesList=[namesList]
+    
+    # add ROC and PR on respectives axes
+    for i,model in enumerate(alreadyFittedModelsList) :
+        RocCurveDisplay.from_estimator(estimator=model,
+                                       X=Xtest,
+                                       y=ytest,
+                                       ax=axs[0],
+                                       plot_chance_level=plot_chance_level if i==0 else False,
+                                       name=namesList[i],
+                                       color=palette[i],
+                                       alpha=0.8
+                                      )
+        PrecisionRecallDisplay.from_estimator(estimator=model,
+                                              X=Xtest,
+                                              y=ytest,
+                                              ax=axs[1],
+                                              plot_chance_level=plot_chance_level if i==0 else False,
+                                              name=namesList[i],
+                                              color=palette[i],
+                                              alpha=0.8
+                                             )
+
+    # setting ylim and legend    
+    for ax in axs :
+        ax.axis("square")
+        ax.set_ylim(-0.05,1.05)
+        ax.set_xlim(-0.05,1.05)
+
+        
+    axs[0].legend(loc="lower right")
+    axs[1].legend(loc="best")
+
+        
+    plt.show()
+
+
+
+
+
+
+
+def plotROCandPRfromCV (oofProb, modelName, Xtrain, ytrain, kf, style="mean", plot_chance_level=False,palette=None) :
+    '''
+    
+    plot ROC curve and PrecisionRecall curve for 1 given model, using out of folds scores from a cross validation
+    
+    parameters :
+    ------------
+    oofProb - probs obtained from CV
+    modelName - string 
+    Xtrain - array or dataframe : training data
+    yTrain - array or Series : target values for training data, the ones used to obtain cvProbs
+    kf - cross-validator : the one used to obtain cvProbs
+    style - string : "mean" or "oof"
+                        "mean" - plot global curve using the mean of each fold curve
+                        "oof" - plot global curve using full oofProb and full ytrain to plot a new curve
+    plot_chance_level - bool
+    palette - list : list of colors. Default : None, use of seaborn "tab10" palette
+    
+    output :
+    --------
+    display curves
+    
+    '''
+
+    # imports
+    from sklearn.metrics import RocCurveDisplay, auc
+    from sklearn.metrics import PrecisionRecallDisplay
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    
+    # create figure, both axes and palette
+    fig,axs = plt.subplots(1,2,figsize=(12,7))
+    axs=axs.flatten()
+    if style=="mean" :
+        fig.suptitle(modelName+"\nROC and Precision-Recall curves\nfrom Cross Validation\n(using the mean of folds curves)")
+    if style=="oof" :
+        fig.suptitle(modelName+"\nROC and Precision-Recall curves\nfrom Cross Validation\n(using full out-of-fold preds)")
+    if not palette :
+        palette = sns.color_palette("tab10")
+    
+    # create x axis values
+    linFPR = np.linspace(0, 1, 1000)
+    linRecall = np.linspace(0, 1, 1000)
+    
+    # create lists to receive...
+    TPRs = [] #... folds recalls for ROC curve
+    aucs=[] #... folds roc aucs
+    precisions = [] # ... folds precisions for PR curve
+    a_ps=[] # ... folds average precisions
+
+
+
+
+    # iterate on folds
+    for k_fold, (train_idx,valid_idx) in enumerate(kf.split(Xtrain,ytrain)) :
+
+        cvProb = oofProb[valid_idx]
+        yTrue = ytrain[valid_idx]
+
+
+        # for each fold, plot roc curve
+        vizRoc = RocCurveDisplay.from_predictions(
+                                   y_true=yTrue, 
+                                   y_pred=cvProb,
+                                   ax=axs[0],
+                                   plot_chance_level=plot_chance_level if k_fold==0 else False,
+                                   name="fold "+str(k_fold),
+                                   color=palette[k_fold],
+                                   lw=0.3
+                                  )
+        # store TPR values interpolated to match our xavis values
+        TPRs_interpolations = np.interp(linFPR, vizRoc.fpr, vizRoc.tpr)
+        TPRs_interpolations[0]=0
+        TPRs.append(TPRs_interpolations)
+        # store auc
+        aucs.append(vizRoc.roc_auc)
+
+
+        # for each fold, plot PR curve
+        vizPR = PrecisionRecallDisplay.from_predictions(
+                                   y_true=yTrue, 
+                                   y_pred=cvProb,
+                                   ax=axs[1],
+                                   plot_chance_level=plot_chance_level if k_fold==0 else False,
+                                   name="fold "+str(k_fold),
+                                   color=palette[k_fold],
+                                   lw=0.3
+                                  )
+        # store precisions values interpolated to match our xavis values
+        recall=vizPR.recall
+        recall=np.append(recall,0)
+        precision=vizPR.precision
+        precision=np.append(ytrain.mean(),precision)
+        precisions_interpolations = np.interp(linRecall, np.flip(recall), np.flip(precision))
+        precisions_interpolations[0]=1
+        precisions.append(precisions_interpolations)
+        # store average precision
+        a_ps.append(vizPR.average_precision)
+
+    # for ROC curve, use the mean of stored TPRs
+    if style == "mean" :
+        meanTPR = np.mean(TPRs, axis=0)
+        meanTPR[-1] = 1
+
+        mean_auc = auc(linFPR, meanTPR)
+        std_auc = np.std(aucs)
+        # plot mean ROC curve
+        axs[0].plot(
+            linFPR,
+            meanTPR,
+            color="b",
+            label=r"Mean ROC (AUC = %0.2f $\pm$ %0.2f)" % (mean_auc, std_auc),
+            lw=1.5,
+            alpha=0.8
+        )
+        # plot std range
+        std_TPR = np.std(TPRs, axis=0)
+        TPRs_upper = np.minimum(meanTPR + std_TPR, 1)
+        TPRs_lower = np.maximum(meanTPR - std_TPR, 0)
+        axs[0].fill_between(
+            linFPR,
+            TPRs_lower,
+            TPRs_upper,
+            color="grey",
+            alpha=0.2,
+            label=r"$\pm$ 1 std. dev.",
+         )
+
+
+    # for ROC curve, use the full out of folds scores to plot
+    if style == "oof" :
+        vizRocOof=RocCurveDisplay.from_predictions(
+                                   y_true=ytrain, 
+                                   y_pred=oofProb,
+                                   ax=axs[0],
+                                   plot_chance_level=False,
+                                   name="full oof",
+                                   color="green",
+                                   lw=1.5,
+                                   alpha=0.8
+                                  )
+        # plot std range using same method
+        oofTPRs_interpolations = np.interp(linFPR, vizRocOof.fpr, vizRocOof.tpr)
+        oofTPRs_interpolations[0]=0
+        std_TPR = np.std(TPRs, axis=0)
+        TPRs_upper = np.minimum(oofTPRs_interpolations + std_TPR, 1)
+        TPRs_lower = np.maximum(oofTPRs_interpolations - std_TPR, 0)
+        axs[0].fill_between(
+            linFPR,
+            TPRs_lower,
+            TPRs_upper,
+            color="grey",
+            alpha=0.2,
+            label=r"$\pm$ 1 std. dev.",
+         )
+
+
+    # for PR curve, use the mean of stored precisions
+    if style == "mean" :
+        meanPrecision = np.mean(precisions,axis=0)
+        meanPrecision[-1] = ytrain.mean()
+
+        mean_a_p = np.sum(np.diff(linRecall) * np.array(meanPrecision)[:-1])
+        std_a_p = np.std(mean_a_p)
+        # plot mean PR curve
+        axs[1].plot(
+            linRecall,
+            meanPrecision,
+            color="b",
+            label=r"Mean PR (AP = %0.2f $\pm$ %0.2f)" % (mean_a_p, std_a_p),
+            lw=1.5,
+            alpha=0.8,
+        )
+        # plot std range
+        std_precision = np.std(precisions, axis=0)
+        precisions_upper = np.minimum(meanPrecision + std_precision, 1)
+        precisions_lower = np.maximum(meanPrecision - std_precision, 0)
+        axs[1].fill_between(
+            linRecall,
+            precisions_lower,
+            precisions_upper,
+            color="grey",
+            alpha=0.2,
+            label=r"$\pm$ 1 std. dev.",
+         )
+    # for PR curve, use the full out of folds scores to plot
+    if style == "oof" :
+        vizPROof=PrecisionRecallDisplay.from_predictions(
+                                   y_true=ytrain, 
+                                   y_pred=oofProb,
+                                   ax=axs[1],
+                                   plot_chance_level=False,
+                                   name="full oof",
+                                   color="green",
+                                   lw=1.5,
+                                   alpha = 0.8
+                                  )
+        # plot std range using same method
+        oofPrecisions_interpolations = np.interp(linRecall, np.flip(vizPROof.recall), np.flip(vizPROof.precision))
+        oofPrecisions_interpolations[0]=1
+        std_precision = np.std(precisions, axis=0)
+        precisions_upper = np.minimum(oofPrecisions_interpolations + std_precision, 1)
+        precisions_lower = np.maximum(oofPrecisions_interpolations - std_precision, 0)
+        axs[1].fill_between(
+            linRecall,
+            precisions_lower,
+            precisions_upper,
+            color="grey",
+            alpha=0.2,
+            label=r"$\pm$ 1 std. dev.",
+         )
+
+    
+    # set axis form and limits
+    for ax in axs :
+        ax.axis("square")
+        ax.set(
+            xlim=[-0.05, 1.05],
+            ylim=[-0.05, 1.05],
+            )
+
+
+
+    # set titles and legends
+    axs[0].legend(loc="lower right")
+    axs[1].legend(loc="best")
+    if style == "mean" :
+        axs[0].set_title("Mean ROC curve with variability")
+        axs[1].set_title("Mean PR curve with variability")
+    if style == "oof" :
+        axs[0].set_title("full oof ROC curve with variability")
+        axs[1].set_title("full oof PR curve with variability")
+
+    plt.show()
+    
+    
+
+
+
+
+
+
+
+def plotROCandPRfromCV_several (oofProbList, modelNameList, Xtrain, ytrain, kf, style="mean", plot_chance_level=False,palette=None) :
+    '''
+    plot ROC curve and PrecisionRecall curve for given models, using out of folds scores from a cross validation
+
+    oofProbList - list : list of probs obtained from CV
+    modelNameList - list : list of string 
+    Xtrain - array or dataframe : training data
+    yTrain - array or Series : target values for training data, the ones used to obtain cvProbs
+    kf - cross-validator : the one used to obtain cvProbs
+    style - string : "mean" or "oof"
+                        "mean" - plot global curves using the mean of each fold curve
+                        "oof" - plot global curves using each full oofProb and full ytrain to plot the curves
+    plot_chance_level - bool
+    palette - list : list of colors. Default : None, use of seaborn "tab10" palette
+    
+    
+    
+    '''
+
+    # imports
+    from sklearn.metrics import RocCurveDisplay, auc,roc_curve
+    from sklearn.metrics import PrecisionRecallDisplay,precision_recall_curve
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    
+    # create figure, both axes and palette
+    fig,axs = plt.subplots(1,2,figsize=(12,7))
+    axs=axs.flatten()
+    if style=="mean" :
+        fig.suptitle("ROC and Precision-Recall curves\nfrom Cross Validation\n(using the mean of folds curves)")
+    if style=="oof" :
+        fig.suptitle("ROC and Precision-Recall curves\nfrom Cross Validation\n(using full out-of-fold preds)")
+
+    if not palette :
+        palette = sns.color_palette("tab10")
+
+
+    # iterate on models
+    for i, (oofProb,modelName) in enumerate(zip(oofProbList,modelNameList)) :
+        
+        # if use the mean of folds curves, we iterate on folds
+        if style == "mean" :
+            # create x axis values and list to store folds y values
+            # for roc
+            linFPR = np.linspace(0, 1, 1000)
+            TPRs = []
+            # for PR
+            linRecall = np.linspace(0, 1, 1000)
+            precisions = []
+
+            # iterate on folds
+            for k_fold, (train_idx,valid_idx) in enumerate(kf.split(Xtrain,ytrain)) :
+
+                cvProb = oofProb[valid_idx]
+                yTrue = ytrain[valid_idx]
+
+
+                # extract FPR and TPR of each fold roc curve
+                FPR,TPR,_ = roc_curve(
+                                           y_true=yTrue, 
+                                           y_score=cvProb,
+                                           drop_intermediate=False,
+                                          )
+                # store TPRs values interpolated to match our xavis values
+                TPRs_interpolations = np.interp(linFPR, FPR, TPR)
+                TPRs_interpolations[0]=0
+                TPRs.append(TPRs_interpolations)
+
+
+
+                # extract precision and recall of each fold PR curve
+                precision, recall, _ = precision_recall_curve(
+                                           y_true=yTrue, 
+                                           probas_pred=cvProb,
+                                           drop_intermediate=False,
+                                          )
+                
+                # store precisions values interpolated to match our xavis values
+                recall=np.append(recall,0)
+                precision=np.append(ytrain.mean(),precision)
+
+                precisions_interpolations = np.interp(linRecall, np.flip(recall), np.flip(precision))
+                precisions_interpolations[0]=1
+
+                precisions.append(precisions_interpolations)
+
+
+            # for roc curve, use the mean of stored TPRs
+            meanTPR = np.mean(TPRs, axis=0)
+            meanTPR[-1] = 1
+            mean_auc = auc(linFPR, meanTPR)
+
+            axs[0].plot(
+                linFPR,
+                meanTPR,
+                color=palette[i],
+                label=modelName+" (mean AUC ="+str(round(mean_auc,2))+")",
+                lw=1,
+                alpha=0.8
+            )
+            # for PR curve, use the mean of stored precisions
+            meanPrecision = np.mean(precisions,axis=0)
+            meanPrecision[-1] = ytrain.mean()
+            mean_a_p = np.sum(np.diff(linRecall) * np.array(meanPrecision)[:-1])
+
+            axs[1].plot(
+                linRecall,
+                meanPrecision,
+                color=palette[i],
+                label=modelName+" (mean AP ="+str(round(mean_a_p,2))+")",
+                lw=1,
+                alpha=0.8,
+            )
+        # if we use the full "out of folds" scores :
+        if style == "oof" :
+            RocCurveDisplay.from_predictions(
+                                       y_true=ytrain, 
+                                       y_pred=oofProb,
+                                       ax=axs[0],
+                                       plot_chance_level=plot_chance_level,
+                                       name=modelName,
+                                       color=palette[i],
+                                       lw=1,
+                                       alpha=0.8
+                                      )
+
+
+            x=PrecisionRecallDisplay.from_predictions(
+                                       y_true=ytrain, 
+                                       y_pred=oofProb,
+                                       ax=axs[1],
+                                       plot_chance_level=plot_chance_level,
+                                       name=modelName,
+                                       color=palette[i],
+                                       lw=1,
+                                       alpha = 0.8
+                                      )
+
+
+    # set axis form and limits
+    for ax in axs :
+        ax.axis("square")
+        ax.set(
+            xlim=[-0.05, 1.05],
+            ylim=[-0.05, 1.05],
+            )
+
+
+
+    # set titles and legends
+    axs[0].legend(loc="lower right")
+    axs[1].legend(loc="best")
+    if style == "mean" :
+        axs[0].set_title("mean ROC curve")
+        axs[1].set_title("mean PR curve")
+        axs[0].set_ylabel("True Positive Rate (Positive label: 1)")
+        axs[0].set_xlabel("False Positive Rate (Positive label: 1)")
+        axs[1].set_ylabel("Precision (Positive label: 1)")
+        axs[1].set_xlabel("Recall (Positive label: 1)")
+    if style == "oof" :
+        axs[0].set_title("full oof ROC curve")
+        axs[1].set_title("full oof PR curve")
+
+
+    plt.show()
+    
+
+
+
+def plotROCandPRfromCV_WID (oofProbList, modelNameList, Xtrain, ytrain, kf,palette=None) :
+    '''
+    plot ROC curve and PrecisionRecall curve for 1 or several models, using out of folds scores from a cross validation
+
+    use custom plotROCandPRfromCV_several() and plotROCandPRfromCV() functions
+
+    oofProbList - list : list of probs obtained from CV
+    modelNameList - list : list of string 
+    Xtrain - array or dataframe : training data
+    yTrain - array or Series : target values for training data, the ones used to obtain cvProbs
+    kf - cross-validator : the one used to obtain cvProbs
+    palette - list : list of colors. Default : None, use of seaborn "tab10" palette
+    
+    
+    
+    '''
+
+    # imports
+    import ipywidgets as wid
+
+    
+    # widget to select model 
+    widModel=wid.Dropdown(options=["all"]+[modelName for modelName in modelNameList],
+                              value="all",
+                              description="Model :",
+                              disabled=False,
+                              style={'description_width': 'initial'}
+                              )
+    
+    
+    def plotSingleWid(oofProb, modelName, Xtrain, ytrain, kf,palette) :
+        # imports
+        import ipywidgets as wid
+        # widget for style
+        widStyle=wid.RadioButtons(options={"use the full 'out of folds' pred":"oof","use the mean of folds curves":"mean"},
+                              value="mean",
+                              description="Method :",
+                              disabled=False,
+                              style={'description_width': 'initial'}
+                              )
+        
+        # widget for chance level
+        widChance=wid.RadioButtons(options={"yes":True,"no":False},
+                                  value=False,
+                                  description="Plot chance level :",
+                                  disabled=False,
+                                  style={'description_width': 'initial'}
+                                  )
+        
+        ui=wid.HBox([widStyle,widChance])
+        
+        # oofProb, modelName, Xtrain, ytrain, kf, style="mean", plot_chance_level=False,palette=None
+        out=wid.interactive_output(plotROCandPRfromCV,
+                                   {
+                                       "oofProb" : wid.fixed(oofProb),
+                                       "modelName" : wid.fixed(modelName),
+                                       "Xtrain" :wid.fixed(Xtrain),
+                                       "ytrain" :wid.fixed(ytrain),
+                                       "kf" :wid.fixed(kf),
+                                       "style" : widStyle,
+                                       "plot_chance_level" : widChance,
+                                       "palette" : wid.fixed(palette)
+                                   })
+        
+        display(ui,out)
+    
+    def plotMultiWid(oofProbList,modelNameList,Xtrain,ytrain,kf,palette) :
+        # imports
+        import ipywidgets as wid
+        # widget for style
+        widStyle=wid.RadioButtons(options={"use the full 'out of folds' pred":"oof","use the mean of folds curves":"mean"},
+                              value="mean",
+                              description="Method :",
+                              disabled=False,
+                              style={'description_width': 'initial'}
+                              )
+        
+        # widget for chance level
+        widChance=wid.RadioButtons(options={"no":False,"yes":True},
+                                  value=False,
+                                  description="Plot chance level :",
+                                  disabled=False,
+                                  style={'description_width': 'initial'}
+                                  )
+        
+        # handle widStyle change
+        def handleStyleChange(change) :
+            if change.new=="oof" :
+                widChance.options={"no":False,"yes":True}
+            if change.new=="mean" :
+                widChance.options={"no":False}
+        widStyle.observe(handleStyleChange,'value')
+        
+        ui=wid.HBox([widStyle,widChance])
+        
+        out = wid.interactive_output(plotROCandPRfromCV_several,
+                                   {
+                                       "oofProbList" : wid.fixed(oofProbList),
+                                       "modelNameList" : wid.fixed(modelNameList),
+                                       "Xtrain" :wid.fixed(Xtrain),
+                                       "ytrain" :wid.fixed(ytrain),
+                                       "kf" :wid.fixed(kf),
+                                       "style" : widStyle,
+                                       "plot_chance_level" : widChance,
+                                       "palette" : wid.fixed(palette)
+                                   })
+        display(ui,out)
+        
+    def whichSingleOrMulti(model) :
+        if model == "all" :
+            plotMultiWid(oofProbList=oofProbList,modelNameList=modelNameList,
+                         Xtrain=Xtrain,ytrain=ytrain,kf=kf,palette=palette)
+        else :
+            plotSingleWid(oofProb=oofProbList[modelNameList.index(model)], modelName=model, 
+                         Xtrain=Xtrain,ytrain=ytrain,kf=kf,palette=palette)
+            
+    out = wid.interactive_output(whichSingleOrMulti,{"model":widModel})
+    
+    display(widModel,out)
