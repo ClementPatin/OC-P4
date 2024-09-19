@@ -1,6 +1,6 @@
 # OC-P4
-Credit Scoring Model
-Unbalanced learning
+# Credit Scoring Model
+# Unbalanced learning
 
 ## Project scenario
 *Prêt à dépenser* is a fintech startup specializing in consumer lending. They are looking to implement an AI-driven credit scoring model to evaluate loan applicants. This tool must be explainable so that customer relations officers can easily review the files for potential issues.
